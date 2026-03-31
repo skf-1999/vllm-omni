@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+from contextlib import nullcontext
 from typing import Any
 
 import torch
@@ -19,7 +20,48 @@ from vllm_omni.diffusion.distributed.autoencoders.distributed_vae_executor impor
 logger = init_logger(__name__)
 
 
-class DistributedAutoencoderKLWan(AutoencoderKLWan, DistributedVaeMixin):
+def _make_autocast_context(model: torch.nn.Module):
+    try:
+        first_param = next(model.parameters())
+    except StopIteration:
+        return nullcontext()
+
+    dtype = first_param.dtype
+    if dtype not in (torch.float16, torch.bfloat16):
+        return nullcontext()
+
+    device_type = first_param.device.type
+    try:
+        return torch.autocast(device_type=device_type, dtype=dtype, enabled=True)
+    except (RuntimeError, TypeError, ValueError):
+        pass
+
+    torch_npu = getattr(torch, "npu", None)
+    if (
+        device_type == "npu"
+        and torch_npu is not None
+        and hasattr(torch_npu, "amp")
+        and hasattr(torch_npu.amp, "autocast")
+    ):
+        return torch_npu.amp.autocast(dtype=dtype)
+
+    return nullcontext()
+
+
+class OmniAutoencoderKLWan(AutoencoderKLWan):
+    def _execution_context(self):
+        return _make_autocast_context(self)
+
+    def encode(self, x: torch.Tensor, return_dict: bool = True):
+        with self._execution_context():
+            return super().encode(x, return_dict=return_dict)
+
+    def decode(self, z: torch.Tensor, return_dict: bool = True):
+        with self._execution_context():
+            return super().decode(z, return_dict=return_dict)
+
+
+class DistributedAutoencoderKLWan(OmniAutoencoderKLWan, DistributedVaeMixin):
     @classmethod
     def from_pretrained(cls, *args: Any, **kwargs: Any):
         model = super().from_pretrained(*args, **kwargs)
@@ -84,11 +126,12 @@ class DistributedAutoencoderKLWan(AutoencoderKLWan, DistributedVaeMixin):
         """Decode a single latent tile into RGB space."""
         self.clear_cache()
         time = []
-        for k in range(len(task.tensor)):
-            self._conv_idx = [0]
-            tile = self.post_quant_conv(task.tensor[k])
-            decoded = self.decoder(tile, feat_cache=self._feat_map, feat_idx=self._conv_idx, first_chunk=(k == 0))
-            time.append(decoded)
+        with self._execution_context():
+            for k in range(len(task.tensor)):
+                self._conv_idx = [0]
+                tile = self.post_quant_conv(task.tensor[k])
+                decoded = self.decoder(tile, feat_cache=self._feat_map, feat_idx=self._conv_idx, first_chunk=(k == 0))
+                time.append(decoded)
         result = torch.cat(time, dim=2)
         return result
 
