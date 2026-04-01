@@ -1,0 +1,57 @@
+# Stage config for Wan2.2 diffusion-only pipelines.
+# Covers:
+# - Wan-AI/Wan2.2-T2V-A14B-Diffusers
+# - Wan-AI/Wan2.2-I2V-A14B-Diffusers
+# - Wan-AI/Wan2.2-TI2V-5B-Diffusers
+#
+# This file is primarily intended as a default stage config so Wan2.2 can be
+# launched with profiling enabled. Adjust devices / memory settings for your
+# hardware before long-running jobs.
+
+stage_args:
+  - stage_id: 0
+    stage_type: diffusion
+    runtime:
+      process: true
+      devices: "0,1,2,3"
+      requires_multimodal_data: true
+    engine_args:
+      model_stage: dit
+      max_num_seqs: 1
+      gpu_memory_utilization: 0.85
+      enforce_eager: true
+      trust_remote_code: true
+      engine_output_type: image
+      distributed_executor_backend: "mp"
+      vae_use_tiling: true
+      parallel_config:
+        pipeline_parallel_size: 1
+        data_parallel_size: 1
+        tensor_parallel_size: 1
+        enable_expert_parallel: false
+        sequence_parallel_size: 4
+        ulysses_degree: 4
+        ring_degree: 1
+        cfg_parallel_size: 1
+        vae_patch_parallel_size: 4
+        use_hsdp: true
+        hsdp_shard_size: 4
+        hsdp_replicate_size: 1
+    final_output: true
+    final_output_type: image
+    default_sampling_params:
+      seed: 42
+      height: 720
+      width: 1280
+      num_frames: 61
+      fps: 16
+      num_inference_steps: 4
+      guidance_scale: 5.0
+      guidance_scale_2: 5.0
+      boundary_ratio: 0.875
+
+runtime:
+  enabled: true
+  defaults:
+    window_size: -1
+    max_inflight: 1
