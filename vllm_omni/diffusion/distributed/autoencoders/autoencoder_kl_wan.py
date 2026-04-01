@@ -16,6 +16,7 @@ from vllm_omni.diffusion.distributed.autoencoders.distributed_vae_executor impor
     GridSpec,
     TileTask,
 )
+from vllm_omni.platforms import current_omni_platform
 
 logger = init_logger(__name__)
 
@@ -30,22 +31,11 @@ def _make_autocast_context(model: torch.nn.Module):
     if dtype not in (torch.float16, torch.bfloat16):
         return nullcontext()
 
-    device_type = first_param.device.type
-    try:
-        return torch.autocast(device_type=device_type, dtype=dtype, enabled=True)
-    except (RuntimeError, TypeError, ValueError):
-        pass
-
-    torch_npu = getattr(torch, "npu", None)
-    if (
-        device_type == "npu"
-        and torch_npu is not None
-        and hasattr(torch_npu, "amp")
-        and hasattr(torch_npu.amp, "autocast")
-    ):
-        return torch_npu.amp.autocast(dtype=dtype)
-
-    return nullcontext()
+    return current_omni_platform.create_autocast_context(
+        device_type=first_param.device.type,
+        dtype=dtype,
+        enabled=True,
+    )
 
 
 class OmniAutoencoderKLWan(AutoencoderKLWan):

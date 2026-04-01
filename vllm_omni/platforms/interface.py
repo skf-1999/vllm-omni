@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+from contextlib import nullcontext
 from enum import Enum
 from typing import Any
 
@@ -112,6 +113,22 @@ class OmniPlatform(Platform):
     @classmethod
     def get_free_memory(cls, device: torch.device | None = None) -> int:
         raise NotImplementedError
+
+    @classmethod
+    def create_autocast_context(
+        cls,
+        *,
+        device_type: str,
+        dtype: torch.dtype,
+        enabled: bool = True,
+    ):
+        if not enabled:
+            return nullcontext()
+
+        try:
+            return torch.autocast(device_type=device_type, dtype=dtype, enabled=True)
+        except (RuntimeError, TypeError, ValueError):
+            return nullcontext()
 
     @classmethod
     def supports_cpu_offload(cls) -> bool:
