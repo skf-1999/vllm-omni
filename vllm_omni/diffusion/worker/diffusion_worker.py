@@ -96,6 +96,7 @@ class DiffusionWorker:
 
     def init_device(self) -> None:
         """Initialize the device and distributed environment."""
+        torch.backends.cudnn.enabled = False
         world_size = self.od_config.num_gpus
         rank = self.rank
 
