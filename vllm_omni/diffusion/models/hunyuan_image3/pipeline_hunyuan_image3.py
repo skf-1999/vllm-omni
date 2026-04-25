@@ -291,11 +291,17 @@ def get_hunyuan_image_3_pre_process_func(od_config: OmniDiffusionConfig):
 
 
 class HunyuanImage3Pipeline(
+
     HunyuanImage3PreTrainedModel,
+
     GenerationMixin,
+
     SupportImageInput,
+
     DiffusionPipelineProfilerMixin,
+
 ):
+
     support_image_input = True
     _PROFILER_TARGETS = [
         "model.forward",
