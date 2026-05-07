@@ -103,7 +103,6 @@ from vllm_omni.outputs import OmniRequestOutput
 
 logger = init_logger(__name__)
 
-
 class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
     """OpenAI-compatible chat serving for both LLM and Diffusion models.
 
@@ -2148,15 +2147,24 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
         lora_body = extra_body.get("lora")
         layers = extra_body.get("layers")
         resolution = extra_body.get("resolution")
+        hunyuan_task = extra_body.get("hunyuan_task")
 
         engine_prompt_data: dict[str, Any] | None = None
         modalities = ["image"]
         if reference_images:
+            print(hunyuan_task)
             if len(reference_images) == 1:
                 engine_prompt_data = {"img2img": reference_images[0]}
                 modalities = ["img2img"]
             else:
                 engine_prompt_data = {"image": reference_images}
+
+        if hunyuan_task:
+            from vllm_omni.diffusion.models.hunyuan_image3.prompt_utils import build_prompt
+            prompt = build_prompt(prompt, task=hunyuan_task)
+            if reference_images and len(reference_images) == 1:
+                engine_prompt_data = {"image": reference_images[0]}
+                modalities = ["image"]
 
         engine_prompt: OmniTextPrompt = {"prompt": prompt}
         engine_prompt["modalities"] = modalities

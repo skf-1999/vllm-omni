@@ -1671,7 +1671,7 @@ async def edit_images(
     image_array: list[UploadFile] | None = File(None, alias="image[]"),
     url: list[str] | None = Form(None),
     url_array: list[str] | None = Form(None, alias="url[]"),
-    prompt: str = Form(...),
+    prompt: str = Form(None),
     model: str = Form(None),
     n: int = Form(1),
     size: str = Form("auto"),
@@ -1700,6 +1700,35 @@ async def edit_images(
     """
     OpenAI-compatible image edit endpoint.
     """
+    # Handle JSON request
+    json_data = None
+    if raw_request.headers.get("Content-Type") == "application/json":
+        try:
+            json_data = await raw_request.json()
+        except Exception as e:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST.value, detail=f"Invalid JSON: {str(e)}")
+        # Extract parameters from JSON
+        image = json_data.get("image")
+        prompt = json_data.get("prompt")
+        model = json_data.get("model")
+        n = json_data.get("n", 1)
+        size = json_data.get("size", "auto")
+        response_format = json_data.get("response_format", "b64_json")
+        output_format = json_data.get("output_format", "png")
+        background = json_data.get("background", "auto")
+        output_compression = json_data.get("output_compression", 100)
+        negative_prompt = json_data.get("negative_prompt")
+        num_inference_steps = json_data.get("num_inference_steps")
+        guidance_scale = json_data.get("guidance_scale")
+        strength = json_data.get("strength")
+        true_cfg_scale = json_data.get("true_cfg_scale")
+        seed = json_data.get("seed")
+        generator_device = json_data.get("generator_device")
+        lora = json_data.get("lora")
+        layers = json_data.get("layers")
+        resolution = json_data.get("resolution")
+        hunyuan_task = json_data.get("hunyuan_task")
+    
     # 1. get engine and model
     engine_client, model_name, stage_configs = _get_engine_and_model(raw_request)
     if model is not None and model != model_name:
@@ -1716,16 +1745,21 @@ async def edit_images(
         )
     try:
         # 2. Build prompt & images params
+        if prompt is None:
+            raise HTTPException(status_code=422, detail="Field 'prompt' is required")
         prompt: OmniTextPrompt = {"prompt": prompt}
         if negative_prompt is not None:
             prompt["negative_prompt"] = negative_prompt
         input_images_list = []
-        images = image or image_array
-        urls = url or url_array
-        if images:
-            input_images_list.extend(images)
-        if urls:
-            input_images_list.extend(urls)
+        if isinstance(image, str):
+            input_images_list.append(image)
+        else:
+            images = image or image_array
+            urls = url or url_array
+            if images:
+                input_images_list.extend(images)
+            if urls:
+                input_images_list.extend(urls)
         if not input_images_list:
             raise HTTPException(status_code=422, detail="Field 'image' or 'url' is required")
         # Reject oversized multi-image edit requests before fetching or decoding
@@ -1899,6 +1933,8 @@ async def edit_images(
                 lora_dict = _get_lora_from_json_str(lora)
                 _parse_lora_request(lora_dict)
                 extra_body["lora"] = lora_dict
+            if hunyuan_task is not None:
+                extra_body["hunyuan_task"] = hunyuan_task
 
             prompt_text = prompt.get("prompt", "")
             generation_result = await chat_handler.generate_diffusion_images(
@@ -2218,6 +2254,13 @@ async def _load_input_images(
                 images.append(img)
             except Exception as e:
                 raise ValueError(f"Failed to open uploaded file: {e}")
+        # 4. Local file path
+        elif isinstance(inp, str) and os.path.exists(inp):
+            try:
+                img = Image.open(inp)
+                images.append(img)
+            except Exception as e:
+                raise ValueError(f"Failed to open local file: {e}")
         else:
             raise ValueError(f"Unsupported input: {inp}")
 
